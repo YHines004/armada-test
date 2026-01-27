@@ -13,6 +13,7 @@ import { ColumnConfigurationDialog } from "./ColumnConfigurationDialog"
 import { CustomViewPicker } from "./CustomViewPicker"
 import GroupBySelect from "./GroupBySelect"
 import styles from "./JobsTableActionBar.module.css"
+import { PreemptionDialog } from "./PreemptionDialog"
 import { ReprioritizeDialog } from "./ReprioritizeDialog"
 
 export interface JobsTableActionBarProps {
@@ -78,6 +79,7 @@ export const JobsTableActionBar = memo(
     const [columnConfigurationDialogOpen, setColumnConfigurationDialogOpen] = useState(false)
     const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
     const [reprioritizeDialogOpen, setReprioritizeDialogOpen] = useState(false)
+    const [preemptionDialogOpen, setPreemptionDialogOpen] = useState(false)
 
     const numberSelectedColumns = useMemo(() => {
       const visibleColumnsSet = new Set(visibleColumns)
@@ -92,6 +94,7 @@ export const JobsTableActionBar = memo(
     const columnConfigurationDialogOpenOnClose = useCallback(() => setColumnConfigurationDialogOpen(false), [])
     const cancelDialogOnClose = useCallback(() => setCancelDialogOpen(false), [])
     const reprioritizeDialogOnClose = useCallback(() => setReprioritizeDialogOpen(false), [])
+    const preemptionDialogOnClose = useCallback(() => setPreemptionDialogOpen(false), [])
     return (
       <div className={styles.actionBar}>
         <ColumnConfigurationDialog
@@ -112,6 +115,9 @@ export const JobsTableActionBar = memo(
         {cancelDialogOpen && <CancelDialog onClose={cancelDialogOnClose} selectedItemFilters={selectedItemFilters} />}
         {reprioritizeDialogOpen && (
           <ReprioritizeDialog onClose={reprioritizeDialogOnClose} selectedItemFilters={selectedItemFilters} />
+        )}
+        {preemptionDialogOpen && (
+          <PreemptionDialog onClose={preemptionDialogOnClose} selectedItemFilters={selectedItemFilters} />
         )}
         <div className={styles.actionGroup}>
           <GroupBySelect columns={allColumns} groups={groupedColumns} onGroupsChanged={onGroupsChanged} />
@@ -197,6 +203,15 @@ export const JobsTableActionBar = memo(
               onClick={() => setReprioritizeDialogOpen(true)}
             >
               Reprioritize selected
+            </Button>
+          </div>
+          <div>
+            <Button
+              variant="contained"
+              disabled={numSelectedItems === 0}
+              onClick={() => setPreemptionDialogOpen(true)}
+            >
+              Preemption selected
             </Button>
           </div>
         </div>
