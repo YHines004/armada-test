@@ -13,7 +13,7 @@ import { ColumnConfigurationDialog } from "./ColumnConfigurationDialog"
 import { CustomViewPicker } from "./CustomViewPicker"
 import GroupBySelect from "./GroupBySelect"
 import styles from "./JobsTableActionBar.module.css"
-import { PreemptionDialog } from "./PreemptionDialog"
+import { PreemptDialog } from "./PreemptDialog"
 import { ReprioritizeDialog } from "./ReprioritizeDialog"
 
 export interface JobsTableActionBarProps {
@@ -117,7 +117,7 @@ export const JobsTableActionBar = memo(
           <ReprioritizeDialog onClose={reprioritizeDialogOnClose} selectedItemFilters={selectedItemFilters} />
         )}
         {preemptionDialogOpen && (
-          <PreemptionDialog onClose={preemptionDialogOnClose} selectedItemFilters={selectedItemFilters} />
+          <PreemptDialog onClose={preemptionDialogOnClose} selectedItemFilters={selectedItemFilters} />
         )}
         <div className={styles.actionGroup}>
           <GroupBySelect columns={allColumns} groups={groupedColumns} onGroupsChanged={onGroupsChanged} />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react"
 
 import { Refresh, Dangerous } from "@mui/icons-material"
 import {
@@ -13,6 +13,7 @@ import {
 } from "@mui/material"
 import { ErrorBoundary } from "react-error-boundary"
 
+import { formatJobState } from "../../../common/jobsTableFormatters"
 import { waitMs } from "../../../common/utils"
 import { AlertErrorFallback } from "../../../components/AlertErrorFallback"
 import { useFormatNumberWithUserSettings } from "../../../components/hooks/formatNumberWithUserSettings"
@@ -25,15 +26,15 @@ import { usePreemptJobs } from "../../../services/lookout/usePreemptJobs"
 import dialogStyles from "./DialogStyles.module.css"
 import { JobStatusTable } from "./JobStatusTable"
 
-interface PreemptionDialogProps {
+interface PreemptDialogProps {
   onClose: () => void
   selectedItemFilters: JobFiltersWithExcludes[]
 }
 
-export const PreemptionDialog = ({ onClose, selectedItemFilters }: PreemptionDialogProps) => {
+export const PreemptDialog = ({ onClose, selectedItemFilters }: PreemptDialogProps) => {
   // State
   const [jobIdsToPreemptResponses, setJobIdsToPreemptResponses] = useState<Record<JobId, string>>({})
-  const [reason, setReason] = useState<string>("")
+  const [preemptReason, setPreemptReason] = useState<string | undefined>(undefined)
   const [isPreempting, setIsPreempting] = useState(false)
   const [hasAttemptedPreempt, setHasAttemptedPreempt] = useState(false)
   const [refetchAfterPreempt, setRefetchAfterPreempt] = useState(false)
@@ -54,42 +55,36 @@ export const PreemptionDialog = ({ onClose, selectedItemFilters }: PreemptionDia
     enabled: true,
   })
 
-  const preemptableJobs = useMemo(
-    () => selectedJobs.filter((job) => !isTerminatedJobState(job.state)),
-    [selectedJobs],
-  )
+  const preemptibleJobs = useMemo(() => selectedJobs.filter((job) => !isTerminatedJobState(job.state)), [selectedJobs])
 
   // Actions
   const preemptJobs = useCallback(async () => {
+    if (preemptReason === undefined) {
+      return
+    }
+
     setIsPreempting(true)
 
     try {
       const response = await preemptJobsMutation.mutateAsync({
-        jobs: preemptableJobs,
-        reason,
+        jobs: preemptibleJobs,
+        preemptReason,
       })
 
       if (response.failedJobIds.length === 0) {
-        openSnackbar(
-          "Successfully began preemption. Jobs may take some time to preempt, but you may navigate away.",
-          "success",
-        )
-      } else if (response.successfulJobIds.length === 0) {
-        openSnackbar("All jobs failed to preempt. See table for error responses.", "error")
+        openSnackbar("Successfully requested preemption of selected jobs. See table for job statuses.", "success")
       } else {
-        openSnackbar("Some jobs failed to preempt. See table for error responses.", "warning")
+        openSnackbar("Some preemption requests failed. See table for job statuses.", "warning")
       }
 
       const newResponseStatus = { ...jobIdsToPreemptResponses }
-      response.successfulJobIds.map((jobId) => (newResponseStatus[jobId] = "Success"))
-      response.failedJobIds.map(({ jobId, errorReason }) => (newResponseStatus[jobId] = errorReason))
 
       setJobIdsToPreemptResponses(newResponseStatus)
       setHasAttemptedPreempt(true)
     } finally {
       setIsPreempting(false)
     }
-  }, [preemptableJobs, jobIdsToPreemptResponses, reason, preemptJobsMutation, openSnackbar])
+  }, [preemptReason, preemptibleJobs, jobIdsToPreemptResponses, preemptJobsMutation, openSnackbar])
 
   // Wait after preempt and refetch
   useEffect(() => {
@@ -104,8 +99,13 @@ export const PreemptionDialog = ({ onClose, selectedItemFilters }: PreemptionDia
   }, [refetchAfterPreempt, refetch])
 
   // Event handlers
-  const handleReasonChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    setReason(event.target.value)
+  const handlePreemptReasonChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const reason = event.target.value
+    if (reason.length > 0) {
+      setPreemptReason(reason)
+    } else {
+      setPreemptReason(undefined)
+    }
     setHasAttemptedPreempt(false)
   }, [])
 
@@ -121,20 +121,36 @@ export const PreemptionDialog = ({ onClose, selectedItemFilters }: PreemptionDia
     refetch()
   }, [refetch])
 
-  const jobsToRender = useMemo(() => preemptableJobs.slice(0, 1000), [preemptableJobs])
+  const handleDialogKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (
+        event.key === "Enter" &&
+        !isLoadingJobs &&
+        !hasAttemptedPreempt &&
+        !isPreempting &&
+        preemptibleJobs.length > 0
+      ) {
+        event.preventDefault()
+        handlePreemptJobs()
+      }
+    },
+    [isLoadingJobs, hasAttemptedPreempt, isPreempting, preemptibleJobs.length, handlePreemptJobs],
+  )
+
+  const jobsToRender = useMemo(() => preemptibleJobs.slice(0, 1000), [preemptibleJobs])
+  const formatState = useCallback((job: Job) => formatJobState(job.state), [])
   const formatSubmittedTime = useCallback((job: Job) => formatIsoTimestamp(job.submitted, "full"), [formatIsoTimestamp])
 
   const formatNumber = useFormatNumberWithUserSettings()
 
-  const preemptableJobsCount = preemptableJobs.length
+  const preemptibleJobsCount = preemptibleJobs.length
   const selectedJobsCount = selectedJobs.length
-
   return (
-    <Dialog open={true} onClose={onClose} fullWidth maxWidth="xl">
+    <Dialog open={true} onClose={onClose} fullWidth maxWidth="xl" onKeyDown={handleDialogKeyDown}>
       <DialogTitle>
         {isLoadingJobs
           ? "Preempt jobs"
-          : `Preempt ${formatNumber(preemptableJobsCount)} ${preemptableJobsCount === 1 ? "job" : "jobs"}`}
+          : `Preempt ${formatNumber(preemptibleJobsCount)} ${preemptibleJobsCount === 1 ? "job" : "jobs"}`}
       </DialogTitle>
       <DialogContent sx={{ display: "flex", flexDirection: "column" }}>
         <ErrorBoundary FallbackComponent={AlertErrorFallback}>
@@ -153,26 +169,27 @@ export const PreemptionDialog = ({ onClose, selectedItemFilters }: PreemptionDia
 
           {!isLoadingJobs && !error && (
             <>
-              {preemptableJobs.length > 0 && preemptableJobs.length < selectedJobs.length && (
+              {preemptibleJobs.length > 0 && preemptibleJobs.length < selectedJobs.length && (
                 <Alert severity="info" sx={{ marginBottom: "0.5em" }}>
                   {formatNumber(selectedJobsCount)} {selectedJobsCount === 1 ? "job is" : "jobs are"} selected, but only{" "}
-                  {formatNumber(preemptableJobsCount)} {preemptableJobsCount === 1 ? "job is" : "jobs are"} in a
+                  {formatNumber(preemptibleJobsCount)} {preemptibleJobsCount === 1 ? "job is" : "jobs are"} in a
                   non-terminated state.
                 </Alert>
               )}
 
-              {preemptableJobs.length === 0 && (
+              {preemptibleJobs.length === 0 && (
                 <Alert severity="success">
                   All selected jobs are in a terminated state already, therefore there is nothing to preempt.
                 </Alert>
               )}
 
-              {preemptableJobs.length > 0 && (
+              {preemptibleJobs.length > 0 && (
                 <JobStatusTable
                   jobsToRender={jobsToRender}
                   jobStatus={jobIdsToPreemptResponses}
-                  totalJobCount={preemptableJobs.length}
+                  totalJobCount={preemptibleJobs.length}
                   additionalColumnsToDisplay={[
+                    { displayName: "State", formatter: formatState },
                     { displayName: "Submitted Time", formatter: formatSubmittedTime },
                   ]}
                   showStatus={Object.keys(jobIdsToPreemptResponses).length > 0}
@@ -180,13 +197,17 @@ export const PreemptionDialog = ({ onClose, selectedItemFilters }: PreemptionDia
               )}
 
               <TextField
-                value={reason}
+                value={preemptReason ?? ""}
                 autoFocus={true}
-                label={"Reason for preemption (optional)"}
+                label={"Reason for job preemption"}
                 margin={"normal"}
                 type={"text"}
-                onChange={handleReasonChange}
-                sx={{ maxWidth: "500px" }}
+                required
+                onChange={handlePreemptReasonChange}
+                sx={{ maxWidth: "250px" }}
+                slotProps={{
+                  htmlInput: { inputMode: "numeric", pattern: "[0-9]+" },
+                }}
               />
             </>
           )}
@@ -205,11 +226,11 @@ export const PreemptionDialog = ({ onClose, selectedItemFilters }: PreemptionDia
         <Button
           onClick={handlePreemptJobs}
           loading={isPreempting}
-          disabled={isLoadingJobs || hasAttemptedPreempt || preemptableJobs.length === 0}
+          disabled={isLoadingJobs || hasAttemptedPreempt || preemptibleJobs.length === 0 || preemptReason === undefined}
           variant="contained"
           endIcon={<Dangerous />}
         >
-          Preempt {formatNumber(preemptableJobsCount)} {preemptableJobsCount === 1 ? "job" : "jobs"}
+          Preempt {formatNumber(preemptibleJobsCount)} {preemptibleJobsCount === 1 ? "job" : "jobs"}
         </Button>
       </DialogActions>
     </Dialog>
