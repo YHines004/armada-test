@@ -225,15 +225,6 @@ func (q *Queries) MarkJobsSucceededById(ctx context.Context, jobIds []string) er
 	return err
 }
 
-const markRunsCancelledByJobId = `-- name: MarkRunsCancelledByJobId :exec
-UPDATE runs SET cancelled = true WHERE job_id = ANY($1::text[])
-`
-
-func (q *Queries) MarkRunsCancelledByJobId(ctx context.Context, jobIds []string) error {
-	_, err := q.db.Exec(ctx, markRunsCancelledByJobId, jobIds)
-	return err
-}
-
 const selectAllExecutorSettings = `-- name: SelectAllExecutorSettings :many
 SELECT executor_id, cordoned, cordon_reason, set_by_user, set_at_time FROM executor_settings
 `
@@ -547,7 +538,7 @@ FROM runs jr
        JOIN jobs j
             ON jr.job_id = j.job_id
 WHERE jr.executor = $1
-  AND j.queue = ANY($2::text[])
+  AND jr.queue = ANY($2::text[])
   AND jr.succeeded = false AND jr.failed = false AND jr.cancelled = false AND jr.preempted = false
 `
 
@@ -558,6 +549,69 @@ type SelectJobsByExecutorAndQueuesParams struct {
 
 func (q *Queries) SelectJobsByExecutorAndQueues(ctx context.Context, arg SelectJobsByExecutorAndQueuesParams) ([]Job, error) {
 	rows, err := q.db.Query(ctx, selectJobsByExecutorAndQueues, arg.Executor, arg.Queues)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Job
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.JobID,
+			&i.JobSet,
+			&i.Queue,
+			&i.UserID,
+			&i.Submitted,
+			&i.Groups,
+			&i.Priority,
+			&i.Queued,
+			&i.QueuedVersion,
+			&i.CancelRequested,
+			&i.Cancelled,
+			&i.CancelByJobsetRequested,
+			&i.Succeeded,
+			&i.Failed,
+			&i.SubmitMessage,
+			&i.SchedulingInfo,
+			&i.SchedulingInfoVersion,
+			&i.Serial,
+			&i.LastModified,
+			&i.Validated,
+			&i.Pools,
+			&i.BidPrice,
+			&i.CancelUser,
+			&i.PriceBand,
+			&i.Terminated,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectJobsByNodeAndExecutorAndQueues = `-- name: SelectJobsByNodeAndExecutorAndQueues :many
+SELECT j.job_id, j.job_set, j.queue, j.user_id, j.submitted, j.groups, j.priority, j.queued, j.queued_version, j.cancel_requested, j.cancelled, j.cancel_by_jobset_requested, j.succeeded, j.failed, j.submit_message, j.scheduling_info, j.scheduling_info_version, j.serial, j.last_modified, j.validated, j.pools, j.bid_price, j.cancel_user, j.price_band, j.terminated
+FROM runs jr
+        JOIN jobs j
+             ON jr.job_id = j.job_id
+WHERE jr.node = $1
+  AND jr.executor = $2
+  AND jr.queue = ANY($3::text[])
+  AND jr.succeeded = false AND jr.failed = false AND jr.cancelled = false AND jr.preempted = false
+`
+
+type SelectJobsByNodeAndExecutorAndQueuesParams struct {
+	Node     string   `db:"node"`
+	Executor string   `db:"executor"`
+	Queues   []string `db:"queues"`
+}
+
+func (q *Queries) SelectJobsByNodeAndExecutorAndQueues(ctx context.Context, arg SelectJobsByNodeAndExecutorAndQueuesParams) ([]Job, error) {
+	rows, err := q.db.Query(ctx, selectJobsByNodeAndExecutorAndQueues, arg.Node, arg.Executor, arg.Queues)
 	if err != nil {
 		return nil, err
 	}
@@ -680,7 +734,7 @@ SELECT j.job_id, j.job_set, j.queue, j.user_id, j.submitted, j.groups, j.priorit
 FROM runs jr
        JOIN jobs j
             ON jr.job_id = j.job_id
-WHERE j.queue = ANY($1::text[])
+WHERE jr.queue = ANY($1::text[])
   AND jr.running = false
   AND jr.pending = false
   AND jr.succeeded = false
@@ -929,7 +983,7 @@ SELECT j.job_id, j.job_set, j.queue, j.user_id, j.submitted, j.groups, j.priorit
 FROM runs jr
        JOIN jobs j
             ON jr.job_id = j.job_id
-WHERE j.queue = ANY($1::text[])
+WHERE jr.queue = ANY($1::text[])
   AND jr.running = false
   AND jr.pending = true
   AND jr.succeeded = false
@@ -1067,7 +1121,7 @@ SELECT j.job_id, j.job_set, j.queue, j.user_id, j.submitted, j.groups, j.priorit
 FROM runs jr
        JOIN jobs j
             ON jr.job_id = j.job_id
-WHERE j.queue = ANY($1::text[])
+WHERE jr.queue = ANY($1::text[])
   AND jr.running = true
   AND jr.returned = false
   AND jr.succeeded = false

@@ -70,9 +70,6 @@ UPDATE runs SET run_attempted = true WHERE run_id = ANY(sqlc.arg(run_ids)::text[
 -- name: MarkJobRunsRunningById :exec
 UPDATE runs SET running = true WHERE run_id = ANY(sqlc.arg(run_ids)::text[]);
 
--- name: MarkRunsCancelledByJobId :exec
-UPDATE runs SET cancelled = true WHERE job_id = ANY(sqlc.arg(job_ids)::text[]);
-
 -- name: SelectJobsForExecutor :many
 SELECT jr.run_id, j.queue, j.job_set, j.user_id, j.groups, j.submit_message
 FROM runs jr
@@ -156,7 +153,17 @@ FROM runs jr
        JOIN jobs j
             ON jr.job_id = j.job_id
 WHERE jr.executor = @executor
-  AND j.queue = ANY(@queues::text[])
+  AND jr.queue = ANY(@queues::text[])
+  AND jr.succeeded = false AND jr.failed = false AND jr.cancelled = false AND jr.preempted = false;
+
+-- name: SelectJobsByNodeAndExecutorAndQueues :many
+SELECT j.*
+FROM runs jr
+        JOIN jobs j
+             ON jr.job_id = j.job_id
+WHERE jr.node = @node
+  AND jr.executor = @executor
+  AND jr.queue = ANY(@queues::text[])
   AND jr.succeeded = false AND jr.failed = false AND jr.cancelled = false AND jr.preempted = false;
 
 -- name: SelectQueuedJobsByQueue :many
@@ -170,7 +177,7 @@ SELECT j.*
 FROM runs jr
        JOIN jobs j
             ON jr.job_id = j.job_id
-WHERE j.queue = ANY(@queue::text[])
+WHERE jr.queue = ANY(@queue::text[])
   AND jr.running = false
   AND jr.pending = false
   AND jr.succeeded = false
@@ -183,7 +190,7 @@ SELECT j.*
 FROM runs jr
        JOIN jobs j
             ON jr.job_id = j.job_id
-WHERE j.queue = ANY(@queue::text[])
+WHERE jr.queue = ANY(@queue::text[])
   AND jr.running = false
   AND jr.pending = true
   AND jr.succeeded = false
@@ -196,7 +203,7 @@ SELECT j.*
 FROM runs jr
        JOIN jobs j
             ON jr.job_id = j.job_id
-WHERE j.queue = ANY(@queue::text[])
+WHERE jr.queue = ANY(@queue::text[])
   AND jr.running = true
   AND jr.returned = false
   AND jr.succeeded = false
